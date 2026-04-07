@@ -27,6 +27,7 @@ boolean Plugin_255(uint8_t function, struct EventStruct *event, String& string)
       dev.ValueCount         = 1;
       dev.SendDataOption     = true;
       dev.TimerOption        = true;
+      PCONFIG(1)             = 0x123; // Default CAN ID
       break;
     }
 
@@ -45,6 +46,7 @@ boolean Plugin_255(uint8_t function, struct EventStruct *event, String& string)
     case PLUGIN_WEBFORM_LOAD:
     {
       addFormNumericBox(F("Blink Interval (ms)"), F("p255_interval"), PCONFIG(0), 100, 10000);
+      addFormNumericBox(F("CAN ID (hex)"), F("p255_canid"), PCONFIG(1), 0, 0x7FF);
       success = true;
       break;
     }
@@ -52,6 +54,7 @@ boolean Plugin_255(uint8_t function, struct EventStruct *event, String& string)
     case PLUGIN_WEBFORM_SAVE:
     {
       PCONFIG(0) = getFormItemInt(F("p255_interval"));
+      PCONFIG(1) = getFormItemInt(F("p255_canid"));
       success = true;
       break;
     }

@@ -60,7 +60,10 @@ jobs:
     needs: generate-matrix
     runs-on: ubuntu-latest
     strategy:
-      matrix: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
+      matrix:
+        include:
+          - chip: esp32s3
+            env: custom_ESP32s3_4M316k
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
