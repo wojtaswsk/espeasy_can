@@ -35,6 +35,7 @@
 // filterType
 # define FILTER_NONE         (0)
 # define FILTER_MEDIAN       (1)
+# define FILTER_COSMIC       (2)
 
 # define P013_DEFAULT_FILTER_SIZE     (5)
 # define P013_DEFAULT_TRIGGER_WIDTH   (10)

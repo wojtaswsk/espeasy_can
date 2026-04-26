@@ -172,10 +172,11 @@ boolean                    Plugin_013(uint8_t function, struct EventStruct *even
       }
 
       {
-        const int optionValuesFilter[] = { FILTER_NONE, FILTER_MEDIAN };
+        const int optionValuesFilter[] = { FILTER_NONE, FILTER_MEDIAN, FILTER_COSMIC };
         const __FlashStringHelper *optionsFilter[] {
           F("None"),
           F("Median"),
+          F("Cosmic"),
         };
         constexpr size_t optionCount = NR_ELEMENTS(optionValuesFilter);
         const FormSelectorOptions selector(optionCount, optionsFilter, optionValuesFilter);
@@ -271,6 +272,9 @@ boolean                    Plugin_013(uint8_t function, struct EventStruct *even
           }
           else if (P013_FILTERTYPE == FILTER_MEDIAN) {
             log += strformat(F("Median size: %d"), P013_FILTER_SIZE);
+          }
+          else if (P013_FILTERTYPE == FILTER_COSMIC) {
+            log += strformat(F("Cosmic (3-max) size: %d"), P013_FILTER_SIZE);
           } else {
             log += F("invalid!");
           }
@@ -389,6 +393,75 @@ float Plugin_013_read(struct EventStruct *event)
     case FILTER_MEDIAN:
       echoTime = (P_013_sensordefs[event->TaskIndex])->ping_median(P013_FILTER_SIZE, max_distance_cm);
       break;
+    case FILTER_COSMIC:
+    {
+      unsigned int pings[P013_FILTER_SIZE];
+      int validCount = 0;
+      for (int i = 0; i < P013_FILTER_SIZE; ++i) {
+        unsigned int p = (P_013_sensordefs[event->TaskIndex])->ping();
+        if (p > 0) {
+          pings[validCount++] = p;
+        }
+        delay(30); // HC-SR04 needs some time between pings
+      }
+      if (validCount == 0) {
+        echoTime = 0;
+      } else {
+        // Sort pings ascending
+        for (int i = 0; i < validCount - 1; i++) {
+          for (int j = 0; j < validCount - i - 1; j++) {
+            if (pings[j] > pings[j+1]) {
+              unsigned int temp = pings[j];
+              pings[j] = pings[j+1];
+              pings[j+1] = temp;
+            }
+          }
+        }
+        // Average of up to 3 largest
+        int countToAverage = std::min(validCount, 3);
+        unsigned long sum = 0;
+        for (int i = 0; i < countToAverage; i++) {
+          sum += pings[validCount - 1 - i];
+        }
+        echoTime = sum / countToAverage;
+      }
+
+      // "Cosmic" unrealistic jump protection (ignore if > 1cm jump compared to last value)
+      static float lastValidValue[TASKS_MAX];
+      static int   largeJumpCounter[TASKS_MAX];
+      float        currentValue = (P013_MEASURINGUNIT == UNIT_CM) ? NewPing::convert_cm_F(echoTime) : NewPing::convert_in_F(echoTime);
+
+      if ((lastValidValue[event->TaskIndex] > 0.1f) && (echoTime > 0)) {
+        float diff = abs(currentValue - lastValidValue[event->TaskIndex]);
+
+        if (diff > 1.0f) {
+          // If the jump is large but the value is > 150, it might mean the tank was emptied.
+          // We confirm this after 10 consecutive readings at this level.
+          if (currentValue > 150.0f) {
+            largeJumpCounter[event->TaskIndex]++;
+
+            if (largeJumpCounter[event->TaskIndex] >= 10) {
+              addLog(LOG_LEVEL_INFO, strformat(F("ULTRASONIC : Cosmic accepted jump to empty tank: %f"), currentValue));
+              lastValidValue[event->TaskIndex]   = currentValue;
+              largeJumpCounter[event->TaskIndex] = 0;
+              return currentValue;
+            }
+          }
+          addLog(LOG_LEVEL_INFO,
+                 strformat(F("ULTRASONIC : Cosmic ignored jump: %f -> %f (count: %d)"),
+                           lastValidValue[event->TaskIndex],
+                           currentValue,
+                           largeJumpCounter[event->TaskIndex]));
+          return lastValidValue[event->TaskIndex];
+        }
+      }
+
+      if (echoTime > 0) {
+        lastValidValue[event->TaskIndex]   = currentValue;
+        largeJumpCounter[event->TaskIndex] = 0;
+      }
+      return currentValue;
+    }
     # if P013_EXTENDED_LOG
     default:
       addLog(LOG_LEVEL_ERROR, F("invalid Filter Type setting!")); // Should not be possible...
